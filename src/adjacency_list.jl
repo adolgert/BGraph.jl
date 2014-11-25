@@ -121,15 +121,15 @@ end
 
 function AdjacencyList{GP}(VC::Union(DataType,TypeConstructor),  
         NC::Union(DataType,TypeConstructor), VP::Union(DataType,()),
-        EP::Union(DataType,()), gp::GP)
-    AdjacencyList{VP,EP,GP,VC,NC}(false, gp)
+        EP::Union(DataType,()), gp::GP; is_directed=true)
+    AdjacencyList{VP,EP,GP,VC,NC}(is_directed, gp)
 end
 
 
 function AdjacencyList{GP}(VC::Union(DataType,TypeConstructor),  
         NC::Union(DataType,TypeConstructor), VP::DataType,
-        EP::DataType, gp::GP, capacity::Int)
-    adj=AdjacencyList{VP,EP,GP,VC,NC}(false, gp)
+        EP::DataType, gp::GP, capacity::Int; is_directed=true)
+    adj=AdjacencyList{VP,EP,GP,VC,NC}(is_directed, gp)
     for i in 1:capacity
         add_vertex!(adj)
     end
@@ -216,8 +216,8 @@ end
 start(iter::OutEdgeNeighborIter)=start(iter.neighbor_iter)
 done(iter::OutEdgeNeighborIter, state)=done(iter.neighbor_iter, state)
 function next(iter::OutEdgeNeighborIter, state)
-    n=next(iter.neighbor_iter, state)
-    (iter.source, n)
+    n, next_state=next(iter.neighbor_iter, state)
+    ((iter.source, n), next_state)
 end
 
 function out_edges(vertex_descriptor, g::AdjacencyList)
