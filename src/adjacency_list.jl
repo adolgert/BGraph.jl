@@ -35,8 +35,13 @@ end
 
 # This fools the type system into creating v::Vector{Int} kinds
 # of containers. It is dirty pool.
-cconstruct(x::TypeVar, y)=x
-cconstruct(x::DataType, y)=x{y}
+cconstruct(x::TypeVar, y...)=x
+function cconstruct(VC::DataType, NC, VP, EP)
+    VC{AdjacencyListVertex{VP,EP,VC,NC}}
+end
+function cconstruct(VC::DataType, NC, VP::(), EP)
+    VC{AdjacencyListEmptyVertex{EP,VC,NC}}
+end
 
 store_construct(x::TypeVar, args...)=x
 function store_construct(NC::DataType, VC, EP, self)
@@ -59,19 +64,55 @@ immutable type AdjacencyListVertex{VP,EP,VC,NC}
         vp)
 end
 
-
 function AdjacencyListVertex{VP}(VC, NC, EP, vp::VP)
     AdjacencyListVertex{VP,EP,VC,NC}(vp)
 end
 
+immutable type AdjacencyListEmptyVertex{EP,VC,NC}
+    v::store_construct(NC, VC, EP, AdjacencyListEmptyVertex{EP,VC,NC})
+    AdjacencyListEmptyVertex()=new(
+        container_construct(store_construct(
+            NC, VC, EP, AdjacencyListEmptyVertex{EP,VC,NC})))
+end
+
+function AdjacencyListEmptyVertex(VC, NC, EP)
+    AdjacencyListEmptyVertex{EP,VC,NC}()
+end
+
+# Support bidirectionality through another Parametric type
+# which is enum, effectively, using singleton types.
+immutable type AdjacencyListBiVertex{VP,EP,VC,NC}
+    v::store_construct(NC, VC, EP, AdjacencyListBiVertex{VP,EP,VC,NC})
+    r::store_construct(NC, VC, EP, AdjacencyListBiVertex{VP,EP,VC,NC})
+    vertex_property::VP
+    AdjacencyListBiVertex(vp::VP)=new(
+        container_construct(store_construct(
+            NC, VC, EP, AdjacencyListBiVertex{VP,EP,VC,NC})),
+        vp)
+end
+
+function AdjacencyListBiVertex{VP}(VC, NC, EP, vp::VP)
+    AdjacencyListBiVertex{VP,EP,VC,NC}(vp)
+end
+
+immutable type AdjacencyListBiEmptyVertex{EP,VC,NC}
+    v::store_construct(NC, VC, EP, AdjacencyListBiEmptyVertex{EP,VC,NC})
+    r::store_construct(NC, VC, EP, AdjacencyListBiEmptyVertex{EP,VC,NC})
+    AdjacencyListBiEmptyVertex()=new(
+        container_construct(store_construct(
+            NC, VC, EP, AdjacencyListBiEmptyVertex{EP,VC,NC})))
+end
+
+function AdjacencyListBiEmptyVertex(VC, NC, EP)
+    AdjacencyListBiEmptyVertex{EP,VC,NC}()
+end
 
 type AdjacencyList{VP,EP,GP,VC,NC} <: AbstractAdjacencyList{VP,EP,GP}
-    vertices::cconstruct(VC, AdjacencyListVertex{VP,EP,VC,NC})
+    vertices::cconstruct(VC, NC, VP, EP)
     is_directed::Bool
     graph_property::GP
     AdjacencyList(directed::Bool, gp::GP)=new(
-        container_construct(cconstruct(
-            VC, AdjacencyListVertex{VP,EP,VC,NC})),
+        container_construct(cconstruct(VC, NC, VP, EP)),
         directed,
         gp
         )

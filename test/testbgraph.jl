@@ -44,7 +44,7 @@ g1_wedges = [
 
 adj=AdjacencyList(Vector, Vector, (), Float64, ())
 for i in 1:5
-	add_vertex!((), adj)
+	add_vertex!(adj)
 end
 
 for w in g1_wedges
