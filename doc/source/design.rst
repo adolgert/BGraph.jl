@@ -67,6 +67,7 @@ this is not allowed::
 
   type Foo{C,V}
     container::C{V}
+    Foo(c)=new(c)
   end
 
 That it is not allowed is specified in an issue 3359,

@@ -6,6 +6,10 @@
 Welcome to BGraph's documentation!
 ==================================
 
+The code is on `Github`_.
+
+.. _Github: https://github.com/adolgert/BGraph
+
 Contents:
 
 .. toctree::
