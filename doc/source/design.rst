@@ -61,51 +61,7 @@ indexing.::
 Parameterizing Storage
 ------------------------
 
-It is difficult in Julia to create a type which changes
-storage class depending on a parameter type. For instance,
-this is not allowed::
-
-  type Foo{C,V}
-    container::C{V}
-    Foo(c)=new(c)
-  end
-
-That it is not allowed is specified in an issue 3359,
-https://github.com/JuliaLang/julia/issues/3359.
-Although it is not allowed, this works (for now)::
-
-  cconstruct(x::TypeVar, y)=x
-  cconstruct(x::Union(DataType,TypeConstructor), y)=x{y}
-
-  type Foo{C,V}
-    container::cconstruct(C,V)
-  end
-
-  Foo{Vector,Int}(Array(Int, 0))
-
-Julia does three passes through the type, two
-where it calls ``cconstruct(x::TypeVar, y)`` and then
-one where it passes in the given type. At that point,
-the function can do calculations on the incoming types.
-
-If the code can vary the container type parametrically,
-then it helps to abstract across the container types
-the exact interface this code requires. This will
-look something like the Boost ``property_map`` interface.
-There are two containers in this class, one for
-vertices and one for neighbors of a vertex,
-and they are used slightly differently.
-The ``vertex_descriptor`` will always be some sort
-of key, whether it is a reference to an object in
-a Deque or an Int pointing into a Vector.
-On the other hand, the ``edge_descriptor`` in Boost.Graph
-isn't just a pair of vertices. It's
-a pair of (vertex_descriptor, edge_pointer). In Julia,
-that becomes (vertex_descriptor, edge instance), no
-matter whether neighbor edges are stored in a Set, Deque,
-or Vector.
-
-To this end, there are a set of methods defined for
+There are a set of methods defined for
 each type of container. Here are two.::
 
 	container_key{V}(::Type{Vector{V}})=Int
@@ -140,3 +96,95 @@ it is possible to use a Dict to store vertices (which would
 also be possible in Boost if it weren't already so complicated),
 so this container is included in the code, too.
 
+Contruction of Storage Classes
+--------------------------------
+The package constructs adjacency lists of different
+storage classes using metaprogramming facilities.
+The options on adjacency lists are:
+
+  1. Storage for vertices, handled with code generation.
+     Three main types, Vector, Deque, and Dict.
+
+  2. Storage for neighbors, handled with code generation.
+     Three main types, Vector, Deque, and Set.
+
+  3. Bidirectionality of edges, which is binary
+     and handled in code generation.
+
+  4. Presence of properties for the graph, edge, or vertex.
+     These are binary, handled by writing essentially
+     eight different versions of code generation.
+     Selection of a particular type for storage on graph,
+     edge, or vertex, is handled with parametric types.
+
+  5. Undirected graphs, handled by a boolean member
+     of the graph.
+
+In all, this comes to 3 x 3 x 2 x 8 = 144 versions of
+the adjacency list, any one of which is generated upon
+request using quote() and eval().
+
+
+Tricking Parametric Classes
+------------------------------
+
+The method described here is slow at runtime and has
+been modified, but it's interesting.
+It is difficult in Julia to create a type which changes
+storage class depending on a parameter type. For instance,
+this is not allowed::
+
+  type Foo{C,V}
+    container::C{V}
+    Foo(c)=new(c)
+  end
+
+That it is not allowed is specified in an issue 3359,
+https://github.com/JuliaLang/julia/issues/3359.
+Although it is not allowed, this works (for now)::
+
+  cconstruct(x::TypeVar, y)=x
+  cconstruct(x::Union(DataType,TypeConstructor), y)=x{y}
+
+  type Foo{C,V}
+    container::cconstruct(C,V)
+  end
+
+  Foo{Vector,Int}(Array(Int, 0))
+
+Julia does three passes through the type, two
+where it calls ``cconstruct(x::TypeVar, y)`` and then
+one where it passes in the given type. At that point,
+the function can do calculations on the incoming types.
+
+In profiling, what ends up being slow about this technique
+is that construction happens at runtime. It's much slower
+than a type which knows what to construct. For instance,
+here is the current implementation of the Vertex.::
+
+  immutable type AdjacencyListEmptyVertex{EP,VC,NC}
+      v::store_construct(NC, VC, EP, AdjacencyListEmptyVertex{EP,VC,NC})
+      AdjacencyListEmptyVertex()=new(
+          container_construct(store_construct(
+              NC, VC, EP, AdjacencyListEmptyVertex{EP,VC,NC})))
+  end
+
+The constructor has to figure out what type to construct,
+and that's slow.
+
+If the code can vary the container type parametrically,
+then it helps to abstract across the container types
+the exact interface this code requires. This will
+look something like the Boost ``property_map`` interface.
+There are two containers in this class, one for
+vertices and one for neighbors of a vertex,
+and they are used slightly differently.
+The ``vertex_descriptor`` will always be some sort
+of key, whether it is a reference to an object in
+a Deque or an Int pointing into a Vector.
+On the other hand, the ``edge_descriptor`` in Boost.Graph
+isn't just a pair of vertices. It's
+a pair of (vertex_descriptor, edge_pointer). In Julia,
+that becomes (vertex_descriptor, edge instance), no
+matter whether neighbor edges are stored in a Set, Deque,
+or Vector.

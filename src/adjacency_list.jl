@@ -1,152 +1,291 @@
-
 using DataStructures
 
 include("container.jl")
 
 import Base: start, done, next, isequal
-export AbstractAdjacencyList
+export CreateAdjacencyList
 # Export the neighbor and vertex because the types are in 
 # vertex_descriptor's type sometimes.
-export AdjacencyList, AdjacencyListNeighbor, AdjacencyListVertex
+export AdjacencyList
 export add_vertex!, add_edge!
 export graph_property, vertex_property, edge_property
 export num_vertices, vertices, num_edges, out_edges
 export out_degree, out_neighbors, source, target
+export in_edges
 export start, done, next, isequal
 
+include("container.jl")
 
-abstract AbstractAdjacencyList{VP,EP,GP}
-
-immutable type AdjacencyListNeighbor{ALV,EP}
+immutable type ALNeighborProperty{ALV,EP}
     n::ALV
     edge_property::EP
 end
 
 # A Set container should contain one of each vertex, even if properties
 # are specified differently.
-function isequal(a::AdjacencyListNeighbor, b::AdjacencyListNeighbor)
+function isequal(a::ALNeighborProperty, b::ALNeighborProperty)
     isequal(a.n, b.n)
 end
 
-immutable type AdjacencyListNeighborEmpty{ALV}
+immutable type ALNeighborEmpty{ALV}
     n::ALV
 end
 
+abstract ALVertex
 
-# This fools the type system into creating v::Vector{Int} kinds
-# of containers. It is dirty pool.
-cconstruct(x::TypeVar, y...)=x
-function cconstruct(VC::DataType, NC, VP, EP)
-    VC{AdjacencyListVertex{VP,EP,VC,NC}}
-end
-function cconstruct(VC::DataType, NC, VP::(), EP)
-    VC{AdjacencyListEmptyVertex{EP,VC,NC}}
+abstract ALBiVertex <: ALVertex
+
+abstract AdjacencyList
+
+type ALBidirectional
 end
 
-store_construct(x::TypeVar, args...)=x
-function store_construct(NC::DataType, VC, EP, self)
-    alv=container_key(VC{self})
-    NC{AdjacencyListNeighbor{alv,EP}}
+type ALUnidirectional
 end
 
-function store_construct(NC::DataType, VC, EP::(), self)
-    alv=container_key(VC{self})
-    NC{AdjacencyListNeighborEmpty{alv}}
-end
-
-
-immutable type AdjacencyListVertex{VP,EP,VC,NC}
-    v::store_construct(NC, VC, EP, AdjacencyListVertex{VP,EP,VC,NC})
-    vertex_property::VP
-    AdjacencyListVertex(vp::VP)=new(
-        container_construct(store_construct(
-            NC, VC, EP, AdjacencyListVertex{VP,EP,VC,NC})),
-        vp)
-end
-
-function AdjacencyListVertex{VP}(VC, NC, EP, vp::VP)
-    AdjacencyListVertex{VP,EP,VC,NC}(vp)
-end
-
-immutable type AdjacencyListEmptyVertex{EP,VC,NC}
-    v::store_construct(NC, VC, EP, AdjacencyListEmptyVertex{EP,VC,NC})
-    AdjacencyListEmptyVertex()=new(
-        container_construct(store_construct(
-            NC, VC, EP, AdjacencyListEmptyVertex{EP,VC,NC})))
-end
-
-function AdjacencyListEmptyVertex(VC, NC, EP)
-    AdjacencyListEmptyVertex{EP,VC,NC}()
-end
-
-# Support bidirectionality through another Parametric type
-# which is enum, effectively, using singleton types.
-immutable type AdjacencyListBiVertex{VP,EP,VC,NC}
-    v::store_construct(NC, VC, EP, AdjacencyListBiVertex{VP,EP,VC,NC})
-    r::store_construct(NC, VC, EP, AdjacencyListBiVertex{VP,EP,VC,NC})
-    vertex_property::VP
-    AdjacencyListBiVertex(vp::VP)=new(
-        container_construct(store_construct(
-            NC, VC, EP, AdjacencyListBiVertex{VP,EP,VC,NC})),
-        vp)
-end
-
-function AdjacencyListBiVertex{VP}(VC, NC, EP, vp::VP)
-    AdjacencyListBiVertex{VP,EP,VC,NC}(vp)
-end
-
-immutable type AdjacencyListBiEmptyVertex{EP,VC,NC}
-    v::store_construct(NC, VC, EP, AdjacencyListBiEmptyVertex{EP,VC,NC})
-    r::store_construct(NC, VC, EP, AdjacencyListBiEmptyVertex{EP,VC,NC})
-    AdjacencyListBiEmptyVertex()=new(
-        container_construct(store_construct(
-            NC, VC, EP, AdjacencyListBiEmptyVertex{EP,VC,NC})))
-end
-
-function AdjacencyListBiEmptyVertex(VC, NC, EP)
-    AdjacencyListBiEmptyVertex{EP,VC,NC}()
-end
-
-type AdjacencyList{VP,EP,GP,VC,NC} <: AbstractAdjacencyList{VP,EP,GP}
-    vertices::cconstruct(VC, NC, VP, EP)
-    is_directed::Bool
-    graph_property::GP
-    AdjacencyList(directed::Bool, gp::GP)=new(
-        container_construct(cconstruct(VC, NC, VP, EP)),
-        directed,
-        gp
-        )
-end
-
-
-function AdjacencyList{GP}(VC::Union(DataType,TypeConstructor),  
-        NC::Union(DataType,TypeConstructor), VP::Union(DataType,()),
-        EP::Union(DataType,()), gp::GP; is_directed=true)
-    AdjacencyList{VP,EP,GP,VC,NC}(is_directed, gp)
-end
-
-
-function AdjacencyList{GP}(VC::Union(DataType,TypeConstructor),  
-        NC::Union(DataType,TypeConstructor), VP::DataType,
-        EP::DataType, gp::GP, capacity::Int; is_directed=true)
-    adj=AdjacencyList{VP,EP,GP,VC,NC}(is_directed, gp)
-    for i in 1:capacity
-        add_vertex!(adj)
+function CreateVertex(container, vkey, ::Type{ALUnidirectional}, VP::Type, EP::Type)
+    key_name=(vkey==:self) ? "" : string(vkey)
+    vertex_type=symbol("ALVertex$(string(container))$(key_name)VE")
+    curly_type=:(($vertex_type){VP,EP})
+    println(names(BGraph))
+    if isdefined(BGraph, vertex_type)
+        return curly_type
     end
-    adj
+    local vtype
+    if vkey==:self
+        vtype=:(ALNeighborProperty{$vertex_type{VP,EP},EP})
+    else
+        vtype=:(ALNeighborProperty{($vkey),EP})
+    end
+    println("VertexVE ", vertex_type, " key ", vkey)
+    eval(quote
+        immutable type $vertex_type{VP,EP} <: ALVertex
+            v::($container){($vtype)}
+            vp::VP
+            $(vertex_type)(p::VP)=new(
+                container_construct(
+                    $(container){($vtype)}),
+                p)
+        end
+    end)
+    curly_type
 end
 
 
-function add_vertex!{VP,EP,GP,VC,NC}(g::AdjacencyList{VP,EP,GP,VC,NC})
+function CreateVertex(container, vkey, ::Type{ALBidirectional}, VP::Type, EP::Type)
+    key_name=(vkey==:self) ? "" : string(vkey)
+    vertex_type=symbol("ALVertexBi$(string(container))$(key_name)VE")
+    curly_type=:(($vertex_type){VP,EP})
+    if isdefined(vertex_type)
+        return curly_type
+    end
+    local vtype
+    if vkey==:self
+        vtype=:(ALNeighborProperty{$vertex_type{VP,EP},EP})
+    else
+        vtype=:(ALNeighborProperty{($vkey),EP})
+    end
+    println(vertex_type)
+    eval(quote
+        immutable type $vertex_type{VP,EP} <: ALBiVertex
+        v::($container){($vtype)}
+        r::($container){($vtype)}
+            vp::VP
+            $(vertex_type)(p::VP)=new(
+                container_construct(
+                    $(container){($vtype)}),
+                container_construct(
+                    $(container){($vtype)}),
+                p)
+        end
+    end)
+    curly_type
+end
+
+
+function CreateVertex(container, vkey, ::Type{ALUnidirectional}, VP::Type, EP::Bool)
+    key_name=(vkey==:self) ? "" : string(vkey)
+    vertex_type=symbol("ALVertex$(string(container))$(key_name)V")
+    curly_type=:(($vertex_type){VP})
+    if isdefined(vertex_type)
+        return curly_type
+    end
+    local vtype
+    if vkey==:self
+        vtype=:(ALNeighborEmpty{$vertex_type{VP}})
+    else
+        vtype=:(ALNeighborEmpty{$vkey})
+    end
+    println(vertex_type)
+    eval(quote
+        immutable type ($vertex_type){VP} <: ALVertex
+            v::($container){($vtype)}
+            vp::VP
+            $(vertex_type)(p::VP)=new(
+                container_construct(
+                    $(container){($vtype)}),
+                p)
+        end
+    end)
+    curly_type
+end
+
+
+function CreateVertex(container, vkey, ::Type{ALBidirectional}, VP::Type, EP::Bool)
+    key_name=(vkey==:self) ? "" : string(vkey)
+    vertex_type=symbol("ALVertexBi$(string(container))$(key_name)V")
+    curly_type=:(($vertex_type){VP})
+    if isdefined(vertex_type)
+        return curly_type
+    end
+    local vtype
+    if vkey==:self
+        vtype=:(ALNeighborEmpty{$vertex_type{VP}})
+    else
+        vtype=:(ALNeighborEmpty{$vkey})
+    end
+    println(vertex_type)
+    eval(quote
+        immutable type ($vertex_type){VP} <: ALBiVertex
+        v::($container){($vtype)}
+        r::($container){($vtype)}
+            vp::VP
+            $(vertex_type)(p::VP)=new(
+                container_construct(
+                    $(container){($vtype)}),
+                container_construct(
+                    $(container){($vtype)}),
+                p)
+        end
+    end)
+    curly_type
+end
+
+
+
+
+
+function CreateAdjList(vcontainer, ncontainer;
+        bidirectional::Bool=false, VP=false, EP=false)
+    adj_sym=symbol(join(ASCIIString[
+        "Adjacency",
+        string(vcontainer),
+        string(ncontainer),
+        bidirectional ? "Bi" : "",
+        VP==false ? "" : "V",
+        EP==false ? "" : "E"]))
+    templates=[
+        (true, true) => :(($adj_sym){VP,EP}),
+        (true, false) => :(($adj_sym){VP}),
+        (false, true) => :(($adj_sym){EP}),
+        (false, false) => :(($adj_sym))
+    ]
+    adj_type=templates[(VP!=false, EP!=false)]
+    if isdefined(adj_sym)
+        return adj_type
+    end
+    println(adj_type)
+    direct_type = bidirectional ? ALBidirectional : ALUnidirectional
+    vertex_type=CreateVertex(ncontainer, container_key(eval(vcontainer)),
+        direct_type, VP==false? false : Int, EP==false ? false : Int)
+    eval(quote
+        type ($adj_type) <: AdjacencyList
+            vertices::($vcontainer){($vertex_type)}
+            is_directed::Bool
+        end
+    end)
+
+    ex2=quote
+        function ($adj_sym)(; is_directed=false)
+            ($adj_type)( container_construct(($vcontainer){($vertex_type)}),
+                is_directed)
+        end
+    end
+    # Adding types to the argument list of the function.
+    if false!=VP
+        push!(ex2.args[2].args[1].args, :VP)
+    end
+    if false!=EP
+        push!(ex2.args[2].args[1].args, :EP)
+    end
+    eval(ex2)
+    adj_type
+end
+
+
+function CreateAdjListG(vcontainer, ncontainer;
+        bidirectional::Bool=false, VP=false, EP=false)
+    adj_sym=symbol(join(ASCIIString[
+        "Adjacency",
+        string(vcontainer),
+        string(ncontainer),
+        bidirectional ? "Bi" : "",
+        VP==false ? "" : "V",
+        EP==false ? "" : "E",
+        "G"]))
+    templates=[
+        (true, true) => :(($adj_sym){VP,EP,GP}),
+        (true, false) => :(($adj_sym){VP,GP}),
+        (false, true) => :(($adj_sym){EP,GP}),
+        (false, false) => :(($adj_sym{GP}))
+    ]
+    adj_type=templates[(VP!=false, EP!=false)]
+    if isdefined(adj_sym)
+        return adj_type
+    end
+    println(adj_type)
+    direct_type = bidirectional ? ALBidirectional : ALUnidirectional
+    vertex_type=CreateVertex(ncontainer, container_key(eval(vcontainer)),
+        direct_type, VP==false? false : Int, EP==false ? false : Int)
+    println("CreateAdjGP vert ", vertex_type)
+    ex1=quote
+        type ($adj_type) <: AdjacencyList
+            vertices::($vcontainer){($vertex_type)}
+            is_directed::Bool
+            graph_property::GP
+        end
+    end
+    println("CreateAdjGP ", ex1)
+    eval(ex1)
+
+    ex2=quote
+        function ($adj_sym){GP}(gp::GP; is_directed=false)
+            ($adj_type)( container_construct(($vcontainer){($vertex_type)}),
+                is_directed, gp)
+        end
+    end
+    # Adding types to the argument list of the function.
+    if false!=VP
+        insert!(ex2.args[2].args[1].args, 3, :VP)
+    end
+    if false!=EP
+        insert!(ex2.args[2].args[1].args, 4, :EP)
+    end
+    eval(ex2)
+    adj_type
+end
+
+function CreateAdjacencyList(vcontainer, ncontainer;
+        bidirectional::Bool=false, VP=false, EP=false, GP=false)
+    if GP
+        CreateAdjListG(vcontainer, ncontainer,
+            bidirectional=bidirectional, VP=VP, EP=EP)
+    else
+        CreateAdjList(vcontainer, ncontainer,
+            bidirectional=bidirectional, VP=VP, EP=EP)
+    end
+end
+
+function add_vertex!(g::AdjacencyList)
     container_add_key(g.vertices)
 end
 
-function add_vertex!{VP,EP,GP,VC,NC}(vp::VP, g::AdjacencyList{VP,EP,GP,VC,NC})
+function add_vertex!(vp, g::AdjacencyList)
     container_add_key(g.vertices, vp)
 end
 
 # For when vertices are in a dict. k is the key.
-function add_vertex!{VP,EP,GP,VC,NC}(k, vp::VP, g::AdjacencyList{VP,EP,GP,VC,NC})
+function add_vertex!(k, vp, g::AdjacencyList)
     container_add_key(g.vertices, k, vp)
 end
 
@@ -156,14 +295,8 @@ function target(edge, g::AdjacencyList)
     edge[2].n
 end
 
-# An edge is a tuple of the vertex_descriptor of the source
-# and the vertex value of the target.
-function edge(u, v, g::AdjacencyList)
-    (u, container_get(container_get(g.vertices, u).v, v) )
-end
 
-
-function add_edge!{VP,EP,GP,VC,NC}(u, v, g::AdjacencyList{VP,EP,GP,VC,NC})
+function add_edge!(u, v, g::AdjacencyList)
     uvertex=container_get(g.vertices, u)
     n=container_add(uvertex.v, v)
     if !g.is_directed
@@ -173,9 +306,12 @@ function add_edge!{VP,EP,GP,VC,NC}(u, v, g::AdjacencyList{VP,EP,GP,VC,NC})
     (u, n) # This is the edge descriptor.
 end
 
-function add_edge!{VP,EP,GP,VC,NC}(u, v, ep::EP, g::AdjacencyList{VP,EP,GP,VC,NC})
+
+function add_edge!(u, v, ep, g::AdjacencyList)
     uvertex=container_get(g.vertices, u)
+    println("add_edge! type of edges ", typeof(uvertex.v))
     n=container_add(uvertex.v, v, ep)
+    println("add_edge! added")
     if !g.is_directed
         vvertex=container_get(g.vertices, v)
         container_add(vvertex.v, u, ep)
@@ -183,8 +319,9 @@ function add_edge!{VP,EP,GP,VC,NC}(u, v, ep::EP, g::AdjacencyList{VP,EP,GP,VC,NC
     (u, n) # This is the edge descriptor.
 end
 
+
 # For when edges are in a dict. k is the key to the edge.
-function add_edge!{VP,EP,GP,VC,NC}(u, v, k, ep::EP, g::AdjacencyList{VP,EP,GP,VC,NC})
+function add_edge!(u, v, k, ep, g::AdjacencyList)
     uvertex=container_get(g.vertices, u)
     n=container_add(uvertex.v, k, v, ep)
     if !g.is_directed
@@ -203,7 +340,7 @@ num_vertices(g::AdjacencyList)=length(g.vertices)
 
 vertices(g::AdjacencyList)=container_iter(g.vertices)
 
-function num_edges{V,E}(g::AdjacencyList{V,E})
+function num_edges(g::AdjacencyList)
     sum([length(x.v) for v in g.vertices])
 end
 
@@ -244,3 +381,22 @@ done(iter::AdjacencyListNeighborIter, idx)=done(iter.inner, idx)
 
 out_neighbors(vertex_descriptor, g::AdjacencyList)=
     AdjacencyListNeighborIter(g.vertices[vertex_descriptor].v)
+
+
+function in_edges_vertex{T<:ALBiVertex}(vertex_descriptor, vertex::T,
+        g::AdjacencyList)
+    println("Bidirectional in edges")
+end
+
+function in_edges_vertex{T<:ALVertex}(vertex_descriptor, vertex::T,
+        g::AdjacencyList)
+    println("Unidirectional in edges")
+    if g.is_directed
+    else
+    end
+end
+
+function in_edges(vertex_descriptor, g::AdjacencyList)
+    in_edges_vertex(vertex_descriptor, g.vertices[vertex_descriptor], g)
+end
+
